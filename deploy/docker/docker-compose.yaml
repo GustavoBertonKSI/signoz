@@ -2,14 +2,14 @@ services:
   init-clickhouse:
     networks:
       - signoz-net
-    restart: unless-stopped
+    # Removida a primeira ocorrência de 'restart: unless-stopped'
     logging:
       options:
         max-size: 50m
         max-file: "3"
     image: clickhouse/clickhouse-server:25.5.6
     container_name: signoz-init-clickhouse
-    command:
+    command: 
       - bash
       - -c
       - |
@@ -21,9 +21,10 @@ services:
         wget -O histogram-quantile.tar.gz "https://github.com/SigNoz/signoz/releases/download/histogram-quantile%2F$${version}/histogram-quantile_$${node_os}_$${node_arch}.tar.gz"
         tar -xvzf histogram-quantile.tar.gz
         mv histogram-quantile /var/lib/clickhouse/user_scripts/histogramQuantile
-    restart: on-failure
+    restart: on-failure # Mantida esta, que é apropriada para um serviço de inicialização (executa e tenta novamente se falhar)
     volumes:
       - ../common/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
+  
   zookeeper-1:
     networks:
       - signoz-net
@@ -47,9 +48,9 @@ services:
       retries: 3
     container_name: signoz-zookeeper-1
     # ports:
-    #   - "2181:2181"
-    #   - "2888:2888"
-    #   - "3888:3888"
+    #   - "2181:2181"
+    #   - "2888:2888"
+    #   - "3888:3888"
     volumes:
       - zookeeper-1:/bitnami/zookeeper
     environment:
@@ -58,6 +59,7 @@ services:
       - ZOO_AUTOPURGE_INTERVAL=1
       - ZOO_ENABLE_PROMETHEUS_METRICS=yes
       - ZOO_PROMETHEUS_METRICS_PORT_NUMBER=9141
+  
   clickhouse:
     image: clickhouse/clickhouse-server:25.5.6
     tty: true
@@ -96,9 +98,9 @@ services:
         max-file: "3"
     container_name: signoz-clickhouse
     # ports:
-    #   - "9000:9000"
-    #   - "8123:8123"
-    #   - "9181:9181"
+    #   - "9000:9000"
+    #   - "8123:8123"
+    #   - "9181:9181"
     volumes:
       - ../common/clickhouse/config.xml:/etc/clickhouse-server/config.xml
       - ../common/clickhouse/users.xml:/etc/clickhouse-server/users.xml
@@ -107,6 +109,7 @@ services:
       - ../common/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml
       - clickhouse:/var/lib/clickhouse/
       # - ../common/clickhouse/storage.xml:/etc/clickhouse-server/config.d/storage.xml
+  
   signoz:
     networks:
       - signoz-net
@@ -125,8 +128,8 @@ services:
     command:
       - --config=/root/config/prometheus.yml
     # ports:
-    #   - "8080:8080" # signoz port
-    #   - "6060:6060"     # pprof port
+    #   - "8080:8080" # signoz port
+    #   - "6060:6060"     # pprof port
     volumes:
       - ../common/signoz/prometheus.yml:/root/config/prometheus.yml
       - ../common/dashboards:/root/config/dashboards
@@ -151,6 +154,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+  
   otel-collector:
     networks:
       - signoz-net
@@ -164,6 +168,8 @@ services:
         condition: service_healthy
       schema-migrator-sync:
         condition: service_completed_successfully
+      signoz: # Adicionado 'signoz' como dependência
+        condition: service_healthy
     image: signoz/signoz-otel-collector:${OTELCOL_TAG:-v0.129.7}
     container_name: signoz-otel-collector
     command:
@@ -178,16 +184,15 @@ services:
       - OTEL_RESOURCE_ATTRIBUTES=host.name=signoz-host,os.type=linux
       - LOW_CARDINAL_EXCEPTION_GROUPING=false
     # ports:
-    #   # - "1777:1777"     # pprof extension
-    #   - "4317:4317" # OTLP gRPC receiver
-    #   - "4318:4318" # OTLP HTTP receiver
-    depends_on:
-      signoz:
-        condition: service_healthy
+    #   # - "1777:1777"     # pprof extension
+    #   - "4317:4317" # OTLP gRPC receiver
+    #   - "4318:4318" # OTLP HTTP receiver
+    # Removido depends_on duplicado, a dependência 'signoz' foi movida para o bloco principal de depends_on.
+  
   schema-migrator-sync:
     networks:
       - signoz-net
-    restart: unless-stopped
+    restart: on-failure # Mantido 'on-failure', pois este é um trabalho de migração one-off
     logging:
       options:
         max-size: 50m
@@ -201,11 +206,12 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-    restart: on-failure
+    # Removido 'restart: unless-stopped' que era um conflito.
+  
   schema-migrator-async:
     networks:
       - signoz-net
-    restart: unless-stopped
+    restart: on-failure # Mantido 'on-failure'
     logging:
       options:
         max-size: 50m
@@ -221,7 +227,8 @@ services:
       - async
       - --dsn=tcp://clickhouse:9000
       - --up=
-    restart: on-failure
+    # Removido 'restart: unless-stopped' que era um conflito.
+
 networks:
   signoz-net:
     name: signoz-net
