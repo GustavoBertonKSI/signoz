@@ -1,67 +1,12 @@
-version: "3"
-x-common: &common
-  networks:
-    - signoz-net
-  restart: unless-stopped
-  logging:
-    options:
-      max-size: 50m
-      max-file: "3"
-x-clickhouse-defaults: &clickhouse-defaults
-  !!merge <<: *common
-  image: clickhouse/clickhouse-server:25.5.6
-  tty: true
-  labels:
-    signoz.io/scrape: "true"
-    signoz.io/port: "9363"
-    signoz.io/path: "/metrics"
-  depends_on:
-    init-clickhouse:
-      condition: service_completed_successfully
-    zookeeper-1:
-      condition: service_healthy
-  healthcheck:
-    test:
-      - CMD
-      - wget
-      - --spider
-      - -q
-      - 0.0.0.0:8123/ping
-    interval: 30s
-    timeout: 5s
-    retries: 3
-  ulimits:
-    nproc: 65535
-    nofile:
-      soft: 262144
-      hard: 262144
-  environment:
-    - CLICKHOUSE_SKIP_USER_SETUP=1
-x-zookeeper-defaults: &zookeeper-defaults
-  !!merge <<: *common
-  image: signoz/zookeeper:3.7.1
-  user: root
-  labels:
-    signoz.io/scrape: "true"
-    signoz.io/port: "9141"
-    signoz.io/path: "/metrics"
-  healthcheck:
-    test:
-      - CMD-SHELL
-      - curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null
-    interval: 30s
-    timeout: 5s
-    retries: 3
-x-db-depend: &db-depend
-  !!merge <<: *common
-  depends_on:
-    clickhouse:
-      condition: service_healthy
-    schema-migrator-sync:
-      condition: service_completed_successfully
 services:
   init-clickhouse:
-    !!merge <<: *common
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
     image: clickhouse/clickhouse-server:25.5.6
     container_name: signoz-init-clickhouse
     command:
@@ -80,7 +25,26 @@ services:
     volumes:
       - ../common/clickhouse/user_scripts:/var/lib/clickhouse/user_scripts/
   zookeeper-1:
-    !!merge <<: *zookeeper-defaults
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
+    image: signoz/zookeeper:3.7.1
+    user: root
+    labels:
+      signoz.io/scrape: "true"
+      signoz.io/port: "9141"
+      signoz.io/path: "/metrics"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null
+      interval: 30s
+      timeout: 5s
+      retries: 3
     container_name: signoz-zookeeper-1
     # ports:
     #   - "2181:2181"
@@ -95,7 +59,41 @@ services:
       - ZOO_ENABLE_PROMETHEUS_METRICS=yes
       - ZOO_PROMETHEUS_METRICS_PORT_NUMBER=9141
   clickhouse:
-    !!merge <<: *clickhouse-defaults
+    image: clickhouse/clickhouse-server:25.5.6
+    tty: true
+    labels:
+      signoz.io/scrape: "true"
+      signoz.io/port: "9363"
+      signoz.io/path: "/metrics"
+    depends_on:
+      init-clickhouse:
+        condition: service_completed_successfully
+      zookeeper-1:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --spider
+        - -q
+        - 0.0.0.0:8123/ping
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
     container_name: signoz-clickhouse
     # ports:
     #   - "9000:9000"
@@ -110,7 +108,18 @@ services:
       - clickhouse:/var/lib/clickhouse/
       # - ../common/clickhouse/storage.xml:/etc/clickhouse-server/config.d/storage.xml
   signoz:
-    !!merge <<: *db-depend
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-migrator-sync:
+        condition: service_completed_successfully
     image: signoz/signoz:${VERSION:-v0.98.0}
     container_name: signoz
     command:
@@ -143,7 +152,18 @@ services:
       timeout: 5s
       retries: 3
   otel-collector:
-    !!merge <<: *db-depend
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-migrator-sync:
+        condition: service_completed_successfully
     image: signoz/signoz-otel-collector:${OTELCOL_TAG:-v0.129.7}
     container_name: signoz-otel-collector
     command:
@@ -165,7 +185,13 @@ services:
       signoz:
         condition: service_healthy
   schema-migrator-sync:
-    !!merge <<: *common
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
     image: signoz/signoz-schema-migrator:${OTELCOL_TAG:-v0.129.7}
     container_name: schema-migrator-sync
     command:
@@ -177,7 +203,18 @@ services:
         condition: service_healthy
     restart: on-failure
   schema-migrator-async:
-    !!merge <<: *db-depend
+    networks:
+      - signoz-net
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: 50m
+        max-file: "3"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-migrator-sync:
+        condition: service_completed_successfully
     image: signoz/signoz-schema-migrator:${OTELCOL_TAG:-v0.129.7}
     container_name: schema-migrator-async
     command:
